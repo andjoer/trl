@@ -35,12 +35,20 @@ try:
 except OptionalDependencyNotAvailable:
     pass
 else:
-    _import_structure["modeling_sd_base"] = [
-        "DDPOPipelineOutput",
-        "DDPOSchedulerOutput",
+    _import_structure={
+    "modeling_sd_base": [
+        "DDPOPipelineOutput",          # Assuming this name collision is intended or handled
+        "DDPOSchedulerOutput",       # Assuming this name collision is intended or handled
         "DDPOStableDiffusionPipeline",
         "DefaultDDPOStableDiffusionPipeline",
-    ]
+    ],
+    "modeling_fluxfill_base": [
+        "DDPOFluxFillPipelineOutput",
+        "DDPOFluxFillSchedulerOutput",
+        "DDPOFluxFillPipeline",
+        "DefaultDDPOFluxFillPipeline",
+    ],
+}
 
 if TYPE_CHECKING:
     from .modeling_base import GeometricMixtureWrapper, PreTrainedModelWrapper, create_reference_model

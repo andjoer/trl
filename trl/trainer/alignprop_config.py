@@ -99,6 +99,10 @@ class AlignPropConfig:
             Range of diffusion timesteps for randomized truncated backpropagation.
         push_to_hub (`bool`, *optional*, defaults to `False`):
             Whether to push the final model to the Hub.
+        image_height (`int`, *optional*, defaults to `512`):
+            Height of the generated images.
+        image_width (`int`, *optional*, defaults to `512`):
+            Width of the generated images.
     """
 
     exp_name: str = field(
@@ -111,7 +115,7 @@ class AlignPropConfig:
         default=None,
         metadata={"help": "Log with either 'wandb' or 'tensorboard'.", "choices": ["wandb", "tensorboard"]},
     )
-    log_image_freq: int = field(default=1, metadata={"help": "Frequency for logging images."})
+    log_image_freq: int = field(default=25, metadata={"help": "Frequency for logging images."})
     tracker_kwargs: dict[str, Any] = field(
         default_factory=dict,
         metadata={"help": "Keyword arguments for the tracker (e.g., `wandb_project`)."},
@@ -131,10 +135,10 @@ class AlignPropConfig:
         default=5, metadata={"help": "Number of checkpoints to keep before overwriting old ones."}
     )
     mixed_precision: str = field(
-        default="fp16",
+        default="no",
         metadata={
-            "help": "Mixed precision training. Possible values are 'fp16', 'bf16', 'none'.",
-            "choices": ["fp16", "bf16", "none"],
+            "help": "Mixed precision training. Possible values are 'fp16', 'bf16', 'no'.",
+            "choices": ["fp16", "bf16", "no"],
         },
     )
     allow_tf32: bool = field(default=True, metadata={"help": "Allow `tf32` on Ampere GPUs."})
@@ -177,6 +181,8 @@ class AlignPropConfig:
         },
     )
     push_to_hub: bool = field(default=False, metadata={"help": "Whether to push the final model to the Hub."})
+    image_height: int = field(default=512, metadata={"help": "Height of the generated images."})
+    image_width: int = field(default=512, metadata={"help": "Width of the generated images."})
 
     def to_dict(self):
         output_dict = {}

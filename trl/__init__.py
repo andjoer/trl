@@ -56,6 +56,7 @@ _import_structure = {
     "trainer": [
         "AlignPropConfig",
         "AlignPropTrainer",
+        "AlignPropTrainerFlux",
         "AllTrueJudge",
         "BaseBinaryJudge",
         "BaseJudge",
@@ -119,6 +120,8 @@ else:
             "DDPOSchedulerOutput",
             "DDPOStableDiffusionPipeline",
             "DefaultDDPOStableDiffusionPipeline",
+            "DDPOFluxFillPipeline",
+            "DefaultDDPOFluxFillPipeline",
         ]
     )
     _import_structure["trainer"].extend(["DDPOConfig", "DDPOTrainer"])
@@ -160,6 +163,7 @@ if TYPE_CHECKING:
     from .trainer import (
         AlignPropConfig,
         AlignPropTrainer,
+        AlignPropTrainerFlux,
         AllTrueJudge,
         BaseBinaryJudge,
         BaseJudge,
@@ -221,6 +225,8 @@ if TYPE_CHECKING:
             DDPOSchedulerOutput,
             DDPOStableDiffusionPipeline,
             DefaultDDPOStableDiffusionPipeline,
+            DDPOFluxFillPipeline,
+            DefaultDDPOFluxFillPipeline,
         )
         from .trainer import DDPOConfig, DDPOTrainer
 
