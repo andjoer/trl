@@ -968,8 +968,7 @@ class DefaultDDPOFluxFillPipeline(DDPOFluxFillPipeline):
             # Check if adapters are already loaded/added
             if not hasattr(self.flux_pipeline.transformer, "peft_config") or getattr(self.flux_pipeline.transformer, "peft_config", None) is None:
                 logger.info("Adding new LoRA adapters to the transformer.")
-                # Define LoRA config (adjust R, alpha, target_modules for Flux transformer)
-                # Find target modules: Inspect self.flux_pipeline.transformer.named_modules()
+
                 lora_config = LoraConfig(
                     r=8, 
                     lora_alpha=8, 
