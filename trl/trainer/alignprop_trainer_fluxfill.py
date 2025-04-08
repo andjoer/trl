@@ -359,7 +359,6 @@ class AlignPropTrainerFlux(PyTorchModelHubMixin):
             truncated_backprop_rand=self.config.truncated_backprop_rand if with_grad else False,
             truncated_backprop_timestep=self.config.truncated_backprop_timestep if with_grad else 0,
             truncated_rand_backprop_minmax=self.config.truncated_rand_backprop_minmax if with_grad else (0,0),
-            gradient_checkpoint=False if with_grad else False,
             # --- Output format ---
             output_type="pt",
         )

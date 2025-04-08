@@ -103,6 +103,8 @@ class AlignPropConfig:
             Height of the generated images.
         image_width (`int`, *optional*, defaults to `512`):
             Width of the generated images.
+        train_gradient_checkpointing (`bool`, *optional*, defaults to `True`):
+            Whether to use gradient checkpointing for the transformer during training.
     """
 
     exp_name: str = field(
@@ -183,6 +185,10 @@ class AlignPropConfig:
     push_to_hub: bool = field(default=False, metadata={"help": "Whether to push the final model to the Hub."})
     image_height: int = field(default=512, metadata={"help": "Height of the generated images."})
     image_width: int = field(default=512, metadata={"help": "Width of the generated images."})
+    train_gradient_checkpointing: bool = field(
+        default=True, 
+        metadata={"help": "Whether to use gradient checkpointing for the transformer during training."}
+    )
 
     def to_dict(self):
         output_dict = {}
