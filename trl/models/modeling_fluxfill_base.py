@@ -616,9 +616,6 @@ def pipeline_step_with_grad(
             max_sequence_length=max_sequence_length, lora_scale=lora_scale,
         )
 
-        # 4. Prepare timesteps
-        #if sigmas is None:
-            #sigmas = np.linspace(pipeline.scheduler.config.sigma_max, pipeline.scheduler.config.sigma_min, num_inference_steps)
 
         image_seq_len = (int(height) // pipeline.vae_scale_factor // 2) * (int(width) // pipeline.vae_scale_factor // 2)
         mu = calculate_shift(
@@ -635,7 +632,7 @@ def pipeline_step_with_grad(
             sigmas=sigmas,
             mu=mu,
         )
-        #timesteps, num_inference_steps = pipeline.retrieve_timesteps(num_inference_steps, strength, device)
+
 
         if num_inference_steps < 1:
             raise ValueError(f"Invalid num_inference_steps {num_inference_steps} after strength adjustment.")

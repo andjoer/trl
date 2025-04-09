@@ -244,8 +244,19 @@ class AlignPropTrainerFlux(PyTorchModelHubMixin):
         if self.accelerator.sync_gradients:
             # Aggregate and log metrics across all processes
             info = {k: torch.mean(torch.tensor(v)) for k, v in info.items()}
-            info = self.accelerator.reduce(info, reduction="mean")
-            info.update({"epoch": epoch, "step": global_step}) 
+            aggregated_info = self.accelerator.reduce(info, reduction="mean")
+            aggregated_info.update({"epoch": epoch, "step": global_step})
+
+            # --- Add Debug Print Here --- 
+            print(f"[DEBUG LOGGING] Step: {global_step}, Logging metrics: {aggregated_info}")
+            # ----------------------------
+
+            # Log the aggregated info dictionary (which contains the mean loss)
+            self.accelerator.log(aggregated_info, step=global_step)
+
+            # --- FIX: Clear info dictionary for the next accumulation cycle --- 
+            info.clear()
+
             global_step += 1
 
             # Log images if configured and callback exists

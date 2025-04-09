@@ -29,13 +29,17 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python examples/scripts/alignprop.py \
 from dataclasses import dataclass, field
 
 import numpy as np
-from transformers import HfArgumentParser
-
+from transformers import HfArgumentParser, CLIPProcessor, CLIPModel
 from trl import AlignPropConfig, AlignPropTrainerFlux, DefaultDDPOFluxFillPipeline
 from trl.models.auxiliary_modules import aesthetic_scorer
 from PIL import Image
 import random
 import torch
+import torch.nn.functional as F
+import accelerate
+
+logger = accelerate.logging.get_logger(__name__)
+
 @dataclass
 class ScriptArguments:
     r"""
@@ -54,6 +58,10 @@ class ScriptArguments:
             Hugging Face model filename for aesthetic scorer model weights.
         use_lora (`bool`, *optional*, defaults to `True`):
             Whether to use LoRA.
+        clip_model_id (`str`, *optional*, defaults to `"openai/clip-vit-large-patch14"`):
+            CLIP model ID for similarity reward.
+        clip_reward_scale (`float`, *optional*, defaults to `1.0`):
+            Scale factor for the CLIP similarity reward component.
     """
 
     pretrained_model: str = field(
@@ -72,6 +80,9 @@ class ScriptArguments:
         metadata={"help": "Hugging Face model filename for aesthetic scorer model weights."},
     )
     use_lora: bool = field(default=True, metadata={"help": "Whether to use LoRA."})
+    clip_model_id: str = field(default="openai/clip-vit-large-patch14", metadata={"help": "CLIP model ID for similarity reward."})
+    clip_reward_scale: float = field(default=20.0, metadata={"help": "Scale factor for the CLIP similarity reward component."})
+    aesthetic_reward_scale: float = field(default=0.4, metadata={"help": "Scale factor for the aesthetic reward component."})
 
 
 animals = [
@@ -105,8 +116,6 @@ animals = [
 ]
 
 
-
-
 def prompt_fn():
     """Generate prompts for training."""
 
@@ -117,10 +126,8 @@ def prompt_fn():
     # Return the prompts and images
     return random.choice(animals), None, image, mask_image, {} 
 
-
 def image_outputs_logger(image_pair_data, global_step, accelerate_logger):
-    # For the sake of this example, we will only log the last batch of images
-    # and associated data
+
     result = {}
     images, prompts, _ = [image_pair_data["images"], image_pair_data["prompts"], image_pair_data["rewards"]]
     for i, image in enumerate(images[:4]):
@@ -130,6 +137,69 @@ def image_outputs_logger(image_pair_data, global_step, accelerate_logger):
         result,
         step=global_step,
     )
+
+
+def combined_reward_function(
+    images: torch.Tensor, 
+    prompts: tuple[str], 
+    metadata: tuple[dict],
+    aesthetic_model: torch.nn.Module,
+    clip_model: CLIPModel,
+    clip_processor: CLIPProcessor,
+    clip_scale: float = 1.0,
+    aesthetic_scale: float = 1.0,
+):
+    """
+    Calculates a combined reward: aesthetic_score + scale * clip_similarity.
+    Ensures differentiability through the aesthetic scorer and CLIP image encoder.
+    Moves models to correct device at runtime.
+    """
+    # Determine target device from input images
+    target_device = images.device 
+    target_dtype = images.dtype 
+
+    # 1. Aesthetic Score
+
+    try:
+        aesthetic_rewards, metadata = aesthetic_model(images,prompts,metadata) 
+    except Exception as e:
+         print(f"Error getting aesthetic score: {e}")
+
+         return torch.zeros(images.shape[0], device=target_device, dtype=target_dtype)
+
+    # 2. CLIP Similarity
+    clip_model.to(target_device)
+    try:
+        # Preprocess images (needs grads)
+        image_inputs = clip_processor(images=images, return_tensors="pt")
+        pixel_values = image_inputs.pixel_values.to(target_device, dtype=clip_model.dtype) 
+
+        # Preprocess text (no grads needed)
+        with torch.no_grad():
+            text_inputs = clip_processor(
+                text=list(prompts), padding=True, truncation=True, return_tensors="pt"
+            ).to(target_device)
+            text_embeds = clip_model.get_text_features(**text_inputs)
+            text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+
+        # Get Image Embeddings (needs grads)
+        image_embeds = clip_model.get_image_features(pixel_values=pixel_values)
+        image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+
+        # Calculate Cosine Similarity 
+        clip_similarity = F.cosine_similarity(image_embeds, text_embeds.to(image_embeds.dtype))
+
+    except Exception as e:
+        print(f"Error during CLIP processing: {e}")
+        clip_similarity = torch.zeros_like(aesthetic_rewards)
+
+    # 3. Combine Rewards 
+    clip_scale_tensor = torch.tensor(clip_scale, device=target_device, dtype=aesthetic_rewards.dtype)
+    combined_rewards = aesthetic_rewards*aesthetic_scale + clip_scale_tensor * clip_similarity
+
+    print(f"[REWARD DBG] Aesthetic: {aesthetic_rewards.mean().item():.3f} | CLIP Sim: {clip_similarity.mean().item():.3f} | Combined: {combined_rewards.mean().item():.3f}")
+
+    return combined_rewards, metadata
 
 
 if __name__ == "__main__":
@@ -142,16 +212,48 @@ if __name__ == "__main__":
         "project_dir": "./save",
     }
 
+    # --- Load Models for Reward ---
+    # 1. Aesthetic Scorer 
+    print("Loading Aesthetic Scorer...")
+    aesthetic_model_instance = aesthetic_scorer( # Call the factory function
+        script_args.hf_hub_aesthetic_model_id, 
+        script_args.hf_hub_aesthetic_model_filename
+    )
+    print("Aesthetic Scorer loaded.")
+    # 2. CLIP Model & Processor
+    print(f"Loading CLIP model: {script_args.clip_model_id}")
+    clip_processor = CLIPProcessor.from_pretrained(script_args.clip_model_id)
+    clip_model = CLIPModel.from_pretrained(script_args.clip_model_id)
+    # Freeze CLIP parameters
+    for param in clip_model.parameters():
+        param.requires_grad_(False)
+    print("CLIP model loaded and frozen.")
+    # -----------------------------
+
     pipeline = DefaultDDPOFluxFillPipeline(
         script_args.pretrained_model,
         pretrained_model_revision=script_args.pretrained_revision,
         use_lora=script_args.use_lora,
     )
 
-    pipeline.to("mps")
+    pipeline.to("cuda")
+
+    # --- Create the final reward function with models baked in ---
+    reward_fn = lambda images, prompts, metadata: combined_reward_function(
+        images=images,
+        prompts=prompts,
+        metadata=metadata,
+        aesthetic_model=aesthetic_model_instance,
+        clip_model=clip_model,
+        clip_processor=clip_processor,
+        clip_scale=script_args.clip_reward_scale,
+        aesthetic_scale=script_args.aesthetic_reward_scale,
+    )
+    # -------------------------------------------------------------
+
     trainer = AlignPropTrainerFlux(
         training_args,
-        aesthetic_scorer(script_args.hf_hub_aesthetic_model_id, script_args.hf_hub_aesthetic_model_filename),
+        reward_fn,
         prompt_fn,
         pipeline,
         image_samples_hook=image_outputs_logger,
